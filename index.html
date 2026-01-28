@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Web BLE App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div class="topnav">
+        <h1>ESP32 Web BLE Application</h1>
+    </div>
+    <div class="content">
+        <div class="card-grid">
+            <div class="card">
+                <p>
+                    <button id="connectBleButton" class="connectButton"> Connect to BLE Device</button>
+                    <button id="disconnectBleButton" class="disconnectButton"> Disconnect BLE Device</button>
+                </p>
+                <p class="gray-label">BLE state:
+                    <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong>
+                </p>
+            </div>
+        </div>
+
+        <div class="card-grid">
+            <!-- ✅ แก้ตรงนี้อย่างเดียว -->
+            <div class="card">
+                <h2>Temperature</h2>
+                <p class="reading"><span id="valueContainer">NaN</span></p>
+                <p class="gray-label">Last reading: <span id="timestamp"></span></p>
+            </div>
+
+            <div class="card">
+                <h2>Control GPIO 2</h2>
+                <button id="onButton" class="onButton">ON</button>
+                <button id="offButton" class="offButton">OFF</button>
+                <p class="gray-label">Last value sent: <span id="valueSent"></span></p>
+            </div>
+        </div>
+    </div>
+    <div class="footer"></div>
+</body>
+
+<script>
+    const connectButton = document.getElementById('connectBleButton');
+    const disconnectButton = document.getElementById('disconnectBleButton');
+    const onButton = document.getElementById('onButton');
+    const offButton = document.getElementById('offButton');
+    const retrievedValue = document.getElementById('valueContainer');
+    const latestValueSent = document.getElementById('valueSent');
+    const bleStateContainer = document.getElementById('bleState');
+    const timestampContainer = document.getElementById('timestamp');
+
+    var deviceName ='ESP32_PIM';
+    var bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
+    var ledCharacteristic = '19b10002-e8f2-537e-4f6c-d104768a1214';
+    var sensorCharacteristic= '19b10001-e8f2-537e-4f6c-d104768a1214';
+
+    var bleServer;
+    var bleServiceFound;
+    var sensorCharacteristicFound;
+
+    connectButton.addEventListener('click', () => {
+        if (navigator.bluetooth) connectToDevice();
+    });
+
+    disconnectButton.addEventListener('click', disconnectDevice);
+    onButton.addEventListener('click', () => writeOnCharacteristic(1));
+    offButton.addEventListener('click', () => writeOnCharacteristic(0));
+
+    function connectToDevice(){
+        navigator.bluetooth.requestDevice({
+            filters: [{name: deviceName}],
+            optionalServices: [bleService]
+        })
+        .then(device => {
+            bleStateContainer.innerHTML = 'Connected to device ' + device.name;
+            bleStateContainer.style.color = "#24af37";
+            device.addEventListener('gattservicedisconnected', onDisconnected);
+            return device.gatt.connect();
+        })
+        .then(server =>{
+            bleServer = server;
+            return bleServer.getPrimaryService(bleService);
+        })
+        .then(service => {
+            bleServiceFound = service;
+            return service.getCharacteristic(sensorCharacteristic);
+        })
+        .then(characteristic => {
+            sensorCharacteristicFound = characteristic;
+            characteristic.addEventListener(
+                'characteristicvaluechanged',
+                handleCharacteristicChange
+            );
+            characteristic.startNotifications();
+            return characteristic.readValue();
+        })
+        .then(value => {
+            retrievedValue.innerHTML =
+                new TextDecoder().decode(value);
+        })
+        .catch(error => console.log(error));
+    }
+
+    function handleCharacteristicChange(event){
+        const newValueReceived =
+            new TextDecoder().decode(event.target.value);
+        retrievedValue.innerHTML = newValueReceived;
+        timestampContainer.innerHTML = new Date().toLocaleString();
+    }
+
+    function writeOnCharacteristic(value){
+        if (bleServer && bleServer.connected) {
+            bleServiceFound.getCharacteristic(ledCharacteristic)
+            .then(characteristic => {
+                characteristic.writeValue(new Uint8Array([value]));
+                latestValueSent.innerHTML = value;
+            });
+        }
+    }
+
+    function disconnectDevice() {
+        if (bleServer && bleServer.connected) bleServer.disconnect();
+        bleStateContainer.innerHTML = "Disconnected";
+        bleStateContainer.style.color = "#d13a30";
+    }
+
+    function onDisconnected(){
+        bleStateContainer.innerHTML = "Disconnected";
+        bleStateContainer.style.color = "#d13a30";
+    }
+</script>
+</html>
+
